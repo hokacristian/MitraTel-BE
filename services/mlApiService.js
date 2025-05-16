@@ -1,4 +1,4 @@
-// Updated mlApiService.js with correct endpoint and response handling
+// Updated mlApiService.js with correct endpoint and response format for KebersihanSite
 
 const axios = require('axios');
 const FormData = require('form-data');
@@ -14,16 +14,21 @@ const analyzeKebersihanSite = async (photoBuffers) => {
   try {
     const formData = new FormData();
     
-    // Add all photos to form data
+    // Add all photos to form data - based on the screenshot, the param name is 'image'
     photoBuffers.forEach((buffer, index) => {
-      formData.append('photos', buffer, `photo${index}.jpg`);
+      formData.append('image', buffer, `photo${index}.jpg`);
     });
     
-    const response = await axios.post(`${ML_API_BASE_URL}/analyze-kebersihan`, formData, {
+    console.log('Sending request to kebersihan API endpoint');
+    
+    // Using the correct endpoint from the screenshot
+    const response = await axios.post(`${ML_API_BASE_URL}/predict_kebersihan`, formData, {
       headers: {
         ...formData.getHeaders(),
       }
     });
+    
+    console.log('Kebersihan ML API Response:', JSON.stringify(response.data));
     
     return response.data;
   } catch (error) {
@@ -78,7 +83,7 @@ const analyzeTeganganListrik = async (photoBuffer) => {
       }
     });
     
-    console.log('ML API Response:', JSON.stringify(response.data));
+    console.log('Tegangan ML API Response:', JSON.stringify(response.data));
     
     // Return the processed data in a consistent format
     return response.data;

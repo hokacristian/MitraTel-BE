@@ -1,3 +1,5 @@
+// Updated kebersihanSiteService.js to handle the latest ML API response format
+
 const prisma = require('../configs/prisma');
 const imageKitService = require('./imageKitService');
 const mlApiService = require('./mlApiService');
@@ -15,40 +17,113 @@ const createKebersihanSite = async (data, files, userId) => {
   const { wilayahId, towerId } = data;
   
   try {
-    // 1. Prepare photo buffers for ML API
+    // Verify that the tower exists first
+    const tower = await prisma.tower.findUnique({
+      where: { id: parseInt(towerId) }
+    });
+
+    if (!tower) {
+      throw new Error(`Tower with ID ${towerId} not found`);
+    }
+
+    // 1. Process ML API call and ImageKit uploads in parallel outside of transaction
+    // Prepare photo buffers for ML API
     const photoBuffers = files.map(file => file.buffer);
     
-    // 2. Send photos to ML API
-    const mlResponse = await mlApiService.analyzeKebersihanSite(photoBuffers);
+    // Execute ML API call and ImageKit uploads in parallel
+    const mlApiPromise = mlApiService.analyzeKebersihanSite(photoBuffers);
+    const imageKitPromises = files.map(file => 
+      imageKitService.uploadImage(file.buffer, file.originalname)
+    );
     
-    // 3. Start database transaction
+    // Wait for all promises to resolve
+    const [mlResponse, ...uploadResults] = await Promise.all([
+      mlApiPromise,
+      ...imageKitPromises
+    ]);
+
+    console.log('ML Response for KebersihanSite:', JSON.stringify(mlResponse));
+
+    // 2. Extract values from ML response based on the NEW documented format
+    // Format: { output: { classification, counts: { tanaman_liar, lumut, ... }, files: [...] } }
+    const output = mlResponse.output || {};
+    const counts = output.counts || {};
+    
+    // Initialize default values
+    let classification = 'unclean'; // Default to unclean if not specified
+    let tanamanLiar = 0;
+    let lumut = 0;
+    let genanganAir = 0;
+    let nodaDinding = 0;
+    let retakan = 0;
+    let sampah = 0;
+    
+    // Extract values if they exist
+    if (output.classification) {
+      classification = output.classification.toLowerCase(); // Convert to lowercase for consistency
+    }
+    
+    if (typeof counts.tanaman_liar === 'number') {
+      tanamanLiar = counts.tanaman_liar;
+    }
+    
+    if (typeof counts.lumut === 'number') {
+      lumut = counts.lumut;
+    }
+    
+    if (typeof counts.genangan_air === 'number') {
+      genanganAir = counts.genangan_air;
+    }
+    
+    if (typeof counts.noda_dinding === 'number') {
+      nodaDinding = counts.noda_dinding;
+    }
+    
+    if (typeof counts.retakan === 'number') {
+      retakan = counts.retakan;
+    }
+    
+    // Combine sampah and sampah_daun if both exist
+    if (typeof counts.sampah === 'number') {
+      sampah = counts.sampah;
+    }
+    
+    if (typeof counts.sampah_daun === 'number') {
+      sampah += counts.sampah_daun; // Add sampah_daun to the sampah count
+    }
+    
+    // 3. Start database transaction with increased timeout
     return await prisma.$transaction(async (prisma) => {
       // 4. Create Kebersihan Site record
       const kebersihanSite = await prisma.kebersihanSite.create({
         data: {
-          towerId: parseInt(towerId),
-          userId,
-          classification: mlResponse.classification,
-          tanamanLiar: mlResponse.tanaman_liar,
-          lumut: mlResponse.lumut,
-          genanganAir: mlResponse.genangan_air,
-          nodaDinding: mlResponse.noda_dinding,
-          retakan: mlResponse.retakan,
-          sampah: mlResponse.sampah
+          tower: {
+            connect: { id: parseInt(towerId) }
+          },
+          user: {
+            connect: { id: userId }
+          },
+          classification,
+          tanamanLiar,
+          lumut,
+          genanganAir,
+          nodaDinding,
+          retakan,
+          sampah
         }
       });
       
-      // 5. Upload photos to ImageKit and create photo records
-      const photoPromises = files.map(async (file) => {
-        const uploadResult = await imageKitService.uploadImage(file.buffer, file.originalname);
-        
-        return prisma.kebersihanFoto.create({
+      // 5. Create photo records with the pre-uploaded images
+      const photoPromises = uploadResults.map(uploadResult => 
+        prisma.kebersihanFoto.create({
           data: {
             url: uploadResult.url,
-            kebersihanId: kebersihanSite.id
+            kebersihanSite: {
+              connect: { id: kebersihanSite.id }
+            }
           }
-        });
-      });
+        })
+      );
       
       await Promise.all(photoPromises);
       
@@ -57,9 +132,23 @@ const createKebersihanSite = async (data, files, userId) => {
         where: { id: kebersihanSite.id },
         include: {
           fotos: true,
-          tower: true
+          tower: {
+            include: {
+              wilayah: true
+            }
+          },
+          user: {
+            select: {
+              id: true,
+              name: true,
+              username: true
+            }
+          }
         }
       });
+    }, {
+      // Increase transaction timeout to 10 seconds
+      timeout: 10000
     });
   } catch (error) {
     console.error('Error in createKebersihanSite:', error);
