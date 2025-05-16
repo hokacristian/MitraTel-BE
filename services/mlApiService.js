@@ -1,4 +1,4 @@
-// Updated mlApiService.js with correct endpoint and response format for KebersihanSite
+// Updated mlApiService.js with correct endpoint and response format for PerangkatAntenna
 
 const axios = require('axios');
 const FormData = require('form-data');
@@ -46,16 +46,21 @@ const analyzePerangkatAntenna = async (photoBuffers) => {
   try {
     const formData = new FormData();
     
-    // Add all photos to form data
+    // Based on the screenshot, the parameter name is 'file'
     photoBuffers.forEach((buffer, index) => {
-      formData.append('photos', buffer, `photo${index}.jpg`);
+      formData.append('file', buffer, `photo${index}.jpg`);
     });
     
-    const response = await axios.post(`${ML_API_BASE_URL}/analyze-antenna`, formData, {
+    console.log('Sending request to antenna API endpoint');
+    
+    // Using the correct endpoint from the screenshot
+    const response = await axios.post(`${ML_API_BASE_URL}/detect_antenna_and_height`, formData, {
       headers: {
         ...formData.getHeaders(),
       }
     });
+    
+    console.log('Perangkat Antenna ML API Response:', JSON.stringify(response.data));
     
     return response.data;
   } catch (error) {

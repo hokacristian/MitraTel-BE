@@ -1,3 +1,5 @@
+// Perbaikan pada perangkatAntennaService.js untuk menangani respons ketinggian dengan benar
+
 const prisma = require('../configs/prisma');
 const imageKitService = require('./imageKitService');
 const mlApiService = require('./mlApiService');
@@ -5,53 +7,129 @@ const mlApiService = require('./mlApiService');
 /**
  * Create a new Perangkat Antenna record with photos
  * @param {Object} data Form data
- * @param {Number} data.wilayahId Wilayah ID
  * @param {Number} data.towerId Tower ID
  * @param {Number} data.latitude Latitude
  * @param {Number} data.longitude Longitude
- * @param {Number} data.height Height
+ * @param {Number} data.height Height (optional, will be detected by ML if not provided)
  * @param {Array<Object>} files Uploaded files
  * @param {String} userId Current user ID
  * @returns {Promise<Object>} Created Perangkat Antenna
  */
 const createPerangkatAntenna = async (data, files, userId) => {
-  const { wilayahId, towerId, latitude, longitude, height } = data;
+  const { towerId, latitude, longitude, height: userProvidedHeight } = data;
   
   try {
-    // 1. Prepare photo buffers for ML API
+    // Verify that the tower exists first
+    const tower = await prisma.tower.findUnique({
+      where: { id: parseInt(towerId) }
+    });
+
+    if (!tower) {
+      throw new Error(`Tower with ID ${towerId} not found`);
+    }
+
+    // 1. Process ML API call and ImageKit uploads in parallel outside of transaction
+    // Prepare photo buffers for ML API
     const photoBuffers = files.map(file => file.buffer);
     
-    // 2. Send photos to ML API
-    const mlResponse = await mlApiService.analyzePerangkatAntenna(photoBuffers);
+    // Execute ML API call and ImageKit uploads in parallel
+    const mlApiPromise = mlApiService.analyzePerangkatAntenna(photoBuffers);
+    const imageKitPromises = files.map(file => 
+      imageKitService.uploadImage(file.buffer, file.originalname)
+    );
     
-    // 3. Start database transaction
+    // Wait for all promises to resolve
+    const [mlResponse, ...uploadResults] = await Promise.all([
+      mlApiPromise,
+      ...imageKitPromises
+    ]);
+
+    console.log('ML Response for PerangkatAntenna:', JSON.stringify(mlResponse));
+
+    // 2. Extract values from ML response based on the screenshot format
+    // Format: { ketinggian: 177.2, antenna_counts: { microwave: 0, radio_freq_unit: 1, remote_radio_unit: 0 } }
+    
+    // Initialize with default values
+    let height = parseFloat(userProvidedHeight) || 0; // Use user-provided height if available
+    let jumlahAntenaRF = 0;
+    let jumlahAntenaRRU = 0;
+    let jumlahAntenaMW = 0;
+    
+    // Extract height if available from ML response
+    if (mlResponse && mlResponse.Ketinggian !== undefined) {
+      // Handle different possible formats of ketinggian
+      let detectedHeight;
+      
+      if (typeof mlResponse.Ketinggian === 'number') {
+        // If it's already a number
+        detectedHeight = mlResponse.Ketinggian;
+      } else if (typeof mlResponse.Ketinggian === 'string') {
+        // If it's a string, remove any quotes and parse
+        detectedHeight = parseFloat(mlResponse.Ketinggian.replace(/"/g, ''));
+      }
+      
+      console.log('Detected height from ML:', detectedHeight);
+      
+      // Use detected height if valid, otherwise fall back to user-provided
+      if (!isNaN(detectedHeight)) {
+        height = detectedHeight;
+      }
+    }
+    
+    console.log('Final height value to be stored:', height);
+    
+    // Extract antenna counts if available
+    if (mlResponse && mlResponse.antenna_counts) {
+      const counts = mlResponse.antenna_counts;
+      
+      if (typeof counts.radio_freq_unit === 'number') {
+        jumlahAntenaRF = counts.radio_freq_unit;
+      }
+      
+      if (typeof counts.remote_radio_unit === 'number') {
+        jumlahAntenaRRU = counts.remote_radio_unit;
+      }
+      
+      if (typeof counts.microwave === 'number') {
+        jumlahAntenaMW = counts.microwave;
+      }
+    }
+    
+    // Calculate total antenna count
+    const totalAntena = jumlahAntenaRF + jumlahAntenaRRU + jumlahAntenaMW;
+    
+    // 3. Start database transaction with increased timeout
     return await prisma.$transaction(async (prisma) => {
       // 4. Create Perangkat Antenna record
       const perangkatAntenna = await prisma.perangkatAntenna.create({
         data: {
-          towerId: parseInt(towerId),
-          userId,
+          tower: {
+            connect: { id: parseInt(towerId) }
+          },
+          user: {
+            connect: { id: userId }
+          },
           latitude: parseFloat(latitude),
           longitude: parseFloat(longitude),
-          height: parseFloat(height),
-          jumlahAntenaRF: mlResponse.jumlahAntenaRF,
-          jumlahAntenaRRU: mlResponse.jumlahAntenaRRU,
-          jumlahAntenaRWU: mlResponse.jumlahAntenaRWU,
-          totalAntena: mlResponse.totalAntena
+          height: height,
+          jumlahAntenaRF,
+          jumlahAntenaRRU,
+          jumlahAntenaMW,
+          totalAntena
         }
       });
       
-      // 5. Upload photos to ImageKit and create photo records
-      const photoPromises = files.map(async (file) => {
-        const uploadResult = await imageKitService.uploadImage(file.buffer, file.originalname);
-        
-        return prisma.perangkatFoto.create({
+      // 5. Create photo records with the pre-uploaded images
+      const photoPromises = uploadResults.map(uploadResult => 
+        prisma.perangkatFoto.create({
           data: {
             url: uploadResult.url,
-            perangkatId: perangkatAntenna.id
+            perangkatAntenna: {
+              connect: { id: perangkatAntenna.id }
+            }
           }
-        });
-      });
+        })
+      );
       
       await Promise.all(photoPromises);
       
@@ -60,9 +138,23 @@ const createPerangkatAntenna = async (data, files, userId) => {
         where: { id: perangkatAntenna.id },
         include: {
           fotos: true,
-          tower: true
+          tower: {
+            include: {
+              wilayah: true
+            }
+          },
+          user: {
+            select: {
+              id: true,
+              name: true,
+              username: true
+            }
+          }
         }
       });
+    }, {
+      // Increase transaction timeout to 10 seconds
+      timeout: 10000
     });
   } catch (error) {
     console.error('Error in createPerangkatAntenna:', error);
