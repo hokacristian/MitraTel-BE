@@ -1,7 +1,10 @@
 const express = require('express');
 const cors = require('cors');
 const authRoutes = require('./routes/authRoutes');
-
+const wilayahRoutes = require('./routes/wilayahRoutes');
+const towerRoutes = require('./routes/towerRoutes');
+const kebersihanSiteRoutes = require('./routes/kebersihanSiteRoutes');
+const perangkatAntennaRoutes = require('./routes/perangkatAntennaRoutes');
 const app = express();
 
 // Middleware
@@ -15,6 +18,10 @@ app.use(cors({
 
 // Routes
 app.use('/auth', authRoutes);
+app.use('/wilayah', wilayahRoutes);
+app.use('/tower', towerRoutes);
+app.use('/kebersihan', kebersihanSiteRoutes);
+app.use('/perangkat', perangkatAntennaRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

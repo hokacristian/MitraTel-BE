@@ -13,13 +13,89 @@ enum Role {
 }
 
 model User {
-  id          String   @id @default(uuid())
-  username    String   @unique
-  name        String
-  nomorTelpon String   @unique
-  password    String
-  role        Role     @default(PETUGAS)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
+  id              String            @id @default(uuid())
+  username        String            @unique
+  name            String
+  nomorTelpon     String            @unique
+  password        String
+  role            Role              @default(PETUGAS)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  kebersihanSites KebersihanSite[]
+  perangkatAntenas PerangkatAntenna[]
+}
+
+model Wilayah {
+  id        Int      @id @default(autoincrement())
+  nama      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  towers    Tower[]
+}
+
+model Tower {
+  id              Int               @id @default(autoincrement())
+  nama            String
+  latitude        Float
+  longitude       Float
+  wilayahId       Int
+  wilayah         Wilayah           @relation(fields: [wilayahId], references: [id])
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  kebersihanSites KebersihanSite[]
+  perangkatAntenas PerangkatAntenna[]
+}
+
+model KebersihanSite {
+  id            Int             @id @default(autoincrement())
+  towerId       Int
+  tower         Tower           @relation(fields: [towerId], references: [id])
+  userId        String
+  user          User            @relation(fields: [userId], references: [id])
+  classification String         // "clean" or "unclean"
+  tanamanLiar   Int
+  lumut         Int
+  genanganAir   Int
+  nodaDinding   Int
+  retakan       Int
+  sampah        Int
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  fotos         KebersihanFoto[]
+}
+
+model KebersihanFoto {
+  id             Int            @id @default(autoincrement())
+  url            String
+  kebersihanId   Int
+  kebersihanSite KebersihanSite @relation(fields: [kebersihanId], references: [id], onDelete: Cascade)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+model PerangkatAntenna {
+  id             Int             @id @default(autoincrement())
+  towerId        Int
+  tower          Tower           @relation(fields: [towerId], references: [id])
+  userId         String
+  user           User            @relation(fields: [userId], references: [id])
+  latitude       Float
+  longitude      Float
+  height         Float
+  jumlahAntenaRF Int
+  jumlahAntenaRRU Int
+  jumlahAntenaRWU Int
+  totalAntena    Int
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  fotos          PerangkatFoto[]
+}
+
+model PerangkatFoto {
+  id               Int              @id @default(autoincrement())
+  url              String
+  perangkatId      Int
+  perangkatAntenna PerangkatAntenna @relation(fields: [perangkatId], references: [id], onDelete: Cascade)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 }
