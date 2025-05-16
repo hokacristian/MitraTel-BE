@@ -1,3 +1,5 @@
+// Updated schema.prisma - update relation field names for consistency
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -13,16 +15,17 @@ enum Role {
 }
 
 model User {
-  id              String            @id @default(uuid())
-  username        String            @unique
-  name            String
-  nomorTelpon     String            @unique
-  password        String
-  role            Role              @default(PETUGAS)
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  kebersihanSites KebersihanSite[]
+  id               String            @id @default(uuid())
+  username         String            @unique
+  name             String
+  nomorTelpon      String            @unique
+  password         String
+  role             Role              @default(PETUGAS)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  kebersihanSites  KebersihanSite[]
   perangkatAntenas PerangkatAntenna[]
+  teganganListriks TeganganListrik[]
 }
 
 model Wilayah {
@@ -34,16 +37,17 @@ model Wilayah {
 }
 
 model Tower {
-  id              Int               @id @default(autoincrement())
-  nama            String
-  latitude        Float
-  longitude       Float
-  wilayahId       Int
-  wilayah         Wilayah           @relation(fields: [wilayahId], references: [id])
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  kebersihanSites KebersihanSite[]
+  id               Int               @id @default(autoincrement())
+  nama             String
+  latitude         Float
+  longitude        Float
+  wilayahId        Int
+  wilayah          Wilayah           @relation(fields: [wilayahId], references: [id])
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  kebersihanSites  KebersihanSite[]
   perangkatAntenas PerangkatAntenna[]
+  teganganListriks TeganganListrik[]
 }
 
 model KebersihanSite {
@@ -98,4 +102,48 @@ model PerangkatFoto {
   perangkatAntenna PerangkatAntenna @relation(fields: [perangkatId], references: [id], onDelete: Cascade)
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
+}
+
+enum TeganganKategori {
+  RN
+  TN
+  SN
+  RT
+  ST
+  RS
+  GN
+  N
+  R
+  S
+  T
+}
+
+enum TeganganStatus {
+  VALID
+  INVALID
+}
+
+model TeganganListrik {
+  id           Int              @id @default(autoincrement())
+  towerId      Int
+  tower        Tower            @relation(fields: [towerId], references: [id])
+  userId       String
+  user         User             @relation(fields: [userId], references: [id])
+  kategori     TeganganKategori
+  nilaiInput   Float            
+  nilaiDeteksi Float            
+  status       TeganganStatus   
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  fotos        TeganganFoto[]
+  
+}
+
+model TeganganFoto {
+  id              Int             @id @default(autoincrement())
+  url             String
+  teganganId      Int
+  teganganListrik TeganganListrik @relation(fields: [teganganId], references: [id], onDelete: Cascade)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 }

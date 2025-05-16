@@ -5,6 +5,8 @@ const wilayahRoutes = require('./routes/wilayahRoutes');
 const towerRoutes = require('./routes/towerRoutes');
 const kebersihanSiteRoutes = require('./routes/kebersihanSiteRoutes');
 const perangkatAntennaRoutes = require('./routes/perangkatAntennaRoutes');
+const teganganListrikRoutes = require('./routes/teganganListrikRoutes');
+
 const app = express();
 
 // Middleware
@@ -22,6 +24,8 @@ app.use('/wilayah', wilayahRoutes);
 app.use('/tower', towerRoutes);
 app.use('/kebersihan', kebersihanSiteRoutes);
 app.use('/perangkat', perangkatAntennaRoutes);
+app.use('/tegangan', teganganListrikRoutes); 
+
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

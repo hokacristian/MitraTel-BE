@@ -1,3 +1,5 @@
+// Updated mlApiService.js with correct endpoint and response handling
+
 const axios = require('axios');
 const FormData = require('form-data');
 
@@ -57,7 +59,37 @@ const analyzePerangkatAntenna = async (photoBuffers) => {
   }
 };
 
+/**
+ * Send photo to ML API for Tegangan Listrik analysis
+ * @param {Buffer} photoBuffer Photo buffer
+ * @returns {Promise<Object>} ML API response
+ */
+const analyzeTeganganListrik = async (photoBuffer) => {
+  try {
+    const formData = new FormData();
+    
+    // Add photo to form data
+    formData.append('file', photoBuffer, 'voltage.jpg');
+    
+    // Using the correct endpoint from your screenshots
+    const response = await axios.post(`${ML_API_BASE_URL}/process_lcd_image_direct_openai`, formData, {
+      headers: {
+        ...formData.getHeaders(),
+      }
+    });
+    
+    console.log('ML API Response:', JSON.stringify(response.data));
+    
+    // Return the processed data in a consistent format
+    return response.data;
+  } catch (error) {
+    console.error('Error calling ML API for tegangan analysis:', error);
+    throw new Error('Failed to analyze tegangan listrik');
+  }
+};
+
 module.exports = {
   analyzeKebersihanSite,
-  analyzePerangkatAntenna
+  analyzePerangkatAntenna,
+  analyzeTeganganListrik
 };
