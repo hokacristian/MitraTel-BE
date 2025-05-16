@@ -1,8 +1,79 @@
-// Updated teganganListrikService.js to handle the correct ML API response format
+// Corrected teganganListrikService.js - Profil based on nilaiDeteksi
 
 const prisma = require('../configs/prisma');
 const imageKitService = require('./imageKitService');
 const mlApiService = require('./mlApiService');
+
+/**
+ * Determine the TeganganProfil (LOW/NORMAL/HIGH) based on category and value
+ * @param {string} kategori - The voltage category (RN, TN, SN, RT, ST, RS, GN, N, R, S, T)
+ * @param {number} nilai - The measured value
+ * @returns {string} - The profile (LOW, NORMAL, HIGH)
+ */
+const determineTeganganProfil = (kategori, nilai) => {
+  // Default values
+  let profil = 'NORMAL';
+  
+  // Parse the value to ensure it's a number
+  const value = parseFloat(nilai);
+  
+  // Check if it's a phase-to-neutral voltage (RN, TN, SN)
+  if (['RN', 'TN', 'SN'].includes(kategori)) {
+    if (value < 200) {
+      profil = 'LOW';
+    } else if (value >= 200 && value <= 240) {
+      profil = 'NORMAL';
+    } else { // value > 240
+      profil = 'HIGH';
+    }
+  }
+  // Check if it's a phase-to-phase voltage (RT, ST, RS)
+  else if (['RT', 'ST', 'RS'].includes(kategori)) {
+    if (value < 380) {
+      profil = 'LOW';
+    } else if (value >= 380 && value <= 415) {
+      profil = 'NORMAL';
+    } else { // value > 415
+      profil = 'HIGH';
+    }
+  }
+  // Check if it's a ground-to-neutral voltage (GN)
+  else if (kategori === 'GN') {
+    // For GN, any value should be close to 0
+    // Let's say normal is ≤1V, high is >1V
+    if (value <= 1) {
+      profil = 'NORMAL';
+    } else {
+      profil = 'HIGH';
+    }
+  }
+  // Check if it's a current measurement (N, R, S, T)
+  else if (['N', 'R', 'S', 'T'].includes(kategori)) {
+    if (value < 10) {
+      profil = 'LOW';
+    } else if (value >= 10 && value <= 60) {
+      profil = 'NORMAL';
+    } else { // value > 60
+      profil = 'HIGH';
+    }
+  }
+  
+  return profil;
+};
+
+/**
+ * Determine the appropriate unit (V or A) based on category
+ * @param {string} kategori - The voltage category
+ * @returns {string} - The unit (V or A)
+ */
+const determineSatuan = (kategori) => {
+  // Single-letter categories (N, R, S, T) are for current (Ampere)
+  if (['N', 'R', 'S', 'T'].includes(kategori)) {
+    return 'A';
+  }
+  // All others are for voltage (Volt)
+  return 'V';
+};
 
 /**
  * Create a new Tegangan Listrik record with photo
@@ -18,7 +89,7 @@ const createTeganganListrik = async (data, file, userId) => {
   const { towerId, kategori, nilaiInput } = data;
   
   try {
-    // 1. Verify that the tower exists first
+    // Verify that the tower exists first
     const tower = await prisma.tower.findUnique({
       where: { id: parseInt(towerId) }
     });
@@ -62,7 +133,7 @@ const createTeganganListrik = async (data, file, userId) => {
     
     if (!isNaN(nilaiDeteksi)) {
       // Allow a small tolerance (e.g., 5% difference)
-      const tolerance = 0.00; // 5% tolerance
+      const tolerance = 0.05; // 5% tolerance
       const inputValue = parseFloat(nilaiInput);
       const difference = Math.abs(inputValue - nilaiDeteksi);
       
@@ -75,7 +146,18 @@ const createTeganganListrik = async (data, file, userId) => {
       console.log(`Comparison: Input ${inputValue}, Detected ${nilaiDeteksi}, Diff ${difference}, PercentDiff ${percentDifference}, Status ${status}`);
     }
     
-    // 5. Now run database operations in a transaction with a higher timeout
+    // 5. Determine the appropriate unit (V or A) based on category
+    const satuan = determineSatuan(kategori);
+    
+    // 6. Determine profile (LOW/NORMAL/HIGH) based on DETECTED value
+    // IMPORTANT: Always use the ML-detected value for profil determination
+    // If nilaiDeteksi is NaN, fallback to nilaiInput (for cases when ML detection fails)
+    const valueForProfil = !isNaN(nilaiDeteksi) ? nilaiDeteksi : parseFloat(nilaiInput);
+    const profil = determineTeganganProfil(kategori, valueForProfil);
+    
+    console.log(`Determined profil for ${kategori} with detected value ${valueForProfil}: ${profil}`);
+    
+    // 7. Now run database operations in a transaction with a higher timeout
     // Only the critical database operations are inside the transaction
     return await prisma.$transaction(async (prisma) => {
       // Create Tegangan Listrik record
@@ -85,6 +167,8 @@ const createTeganganListrik = async (data, file, userId) => {
           nilaiDeteksi: isNaN(nilaiDeteksi) ? 0 : nilaiDeteksi, // Store 0 if NaN
           kategori: kategori,
           status: status,
+          profil: profil, // Store the profile based on detected value
+          satuan: satuan, // Store the appropriate unit
           user: {
             connect: { id: userId }
           },
@@ -98,7 +182,9 @@ const createTeganganListrik = async (data, file, userId) => {
       await prisma.teganganFoto.create({
         data: {
           url: uploadResult.url,
-          teganganId: teganganListrik.id
+          teganganListrik: {
+            connect: { id: teganganListrik.id }
+          }
         }
       });
       
@@ -134,7 +220,7 @@ const createTeganganListrik = async (data, file, userId) => {
  */
 const getAllTeganganListrik = async (query) => {
   try {
-    const { towerId, kategori, status, page = 1, limit = 10 } = query;
+    const { towerId, kategori, status, profil, page = 1, limit = 10 } = query;
     const skip = (page - 1) * parseInt(limit);
     
     const whereClause = {};
@@ -149,6 +235,10 @@ const getAllTeganganListrik = async (query) => {
     
     if (status) {
       whereClause.status = status;
+    }
+    
+    if (profil) {
+      whereClause.profil = profil;
     }
     
     const [data, total] = await Promise.all([
@@ -227,5 +317,7 @@ const getTeganganListrikById = async (id) => {
 module.exports = {
   createTeganganListrik,
   getAllTeganganListrik,
-  getTeganganListrikById
+  getTeganganListrikById,
+  determineTeganganProfil, // Export for testing
+  determineSatuan // Export for testing
 };

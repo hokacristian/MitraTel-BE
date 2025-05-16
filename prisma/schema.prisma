@@ -123,6 +123,12 @@ enum TeganganStatus {
   INVALID
 }
 
+enum TeganganProfil {
+  LOW
+  NORMAL
+  HIGH
+}
+
 model TeganganListrik {
   id           Int              @id @default(autoincrement())
   towerId      Int
@@ -133,10 +139,11 @@ model TeganganListrik {
   nilaiInput   Float            
   nilaiDeteksi Float            
   status       TeganganStatus   
+  profil       TeganganProfil   
+  satuan       String           
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
   fotos        TeganganFoto[]
-  
 }
 
 model TeganganFoto {
