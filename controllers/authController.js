@@ -1,4 +1,4 @@
-const { registerUser, findUserByUsernameOrPhone, findUserByUsername } = require('../services/authService');
+const { registerUser, findUserByUsernameOrPhone, findUserByUsername, findUserById } = require('../services/authService');
 const { generateToken } = require('../configs/jwt');
 const bcrypt = require('bcryptjs');
 
@@ -67,7 +67,33 @@ const login = async (req, res) => {
   }
 };
 
+// New whoami endpoint to verify token and return current user info
+const whoami = async (req, res) => {
+  try {
+    // The user object is already attached to req by the authMiddleware
+    const userId = req.user.id;
+    
+    // Get full user details from database
+    const user = await findUserById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    // Remove password from user object
+    const { password: _, ...userWithoutPassword } = user;
+    
+    res.status(200).json({
+      message: 'Valid token',
+      user: userWithoutPassword
+    });
+  } catch (error) {
+    console.error('Whoami error:', error);
+    res.status(500).json({ message: 'Error validating token', error: error.message });
+  }
+};
+
 module.exports = {
   register,
-  login
+  login,
+  whoami
 };

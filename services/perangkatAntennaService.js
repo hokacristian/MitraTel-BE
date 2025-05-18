@@ -16,7 +16,7 @@ const mlApiService = require('./mlApiService');
  * @returns {Promise<Object>} Created Perangkat Antenna
  */
 const createPerangkatAntenna = async (data, files, userId) => {
-  const { towerId, latitude, longitude, height: userProvidedHeight } = data;
+  const { towerId, latitude: userLatitude, longitude: userLongitude, height: userProvidedHeight } = data;
   
   try {
     // Verify that the tower exists first
@@ -28,17 +28,14 @@ const createPerangkatAntenna = async (data, files, userId) => {
       throw new Error(`Tower with ID ${towerId} not found`);
     }
 
-    // 1. Process ML API call and ImageKit uploads in parallel outside of transaction
-    // Prepare photo buffers for ML API
+    // Process ML API call and ImageKit uploads in parallel
     const photoBuffers = files.map(file => file.buffer);
     
-    // Execute ML API call and ImageKit uploads in parallel
     const mlApiPromise = mlApiService.analyzePerangkatAntenna(photoBuffers);
     const imageKitPromises = files.map(file => 
       imageKitService.uploadImage(file.buffer, file.originalname)
     );
     
-    // Wait for all promises to resolve
     const [mlResponse, ...uploadResults] = await Promise.all([
       mlApiPromise,
       ...imageKitPromises
@@ -46,37 +43,76 @@ const createPerangkatAntenna = async (data, files, userId) => {
 
     console.log('ML Response for PerangkatAntenna:', JSON.stringify(mlResponse));
 
-    // 2. Extract values from ML response based on the screenshot format
-    // Format: { ketinggian: 177.2, antenna_counts: { microwave: 0, radio_freq_unit: 1, remote_radio_unit: 0 } }
-    
-    // Initialize with default values
-    let height = parseFloat(userProvidedHeight) || 0; // Use user-provided height if available
+    // Initialize with values from request body
+    let height = parseFloat(userProvidedHeight) || 0;
+    let latitude = parseFloat(userLatitude);
+    let longitude = parseFloat(userLongitude);
     let jumlahAntenaRF = 0;
     let jumlahAntenaRRU = 0;
     let jumlahAntenaMW = 0;
     
-    // Extract height if available from ML response
+    // Extract height if available and valid from ML response
     if (mlResponse && mlResponse.Ketinggian !== undefined) {
-      // Handle different possible formats of ketinggian
       let detectedHeight;
       
       if (typeof mlResponse.Ketinggian === 'number') {
-        // If it's already a number
         detectedHeight = mlResponse.Ketinggian;
       } else if (typeof mlResponse.Ketinggian === 'string') {
-        // If it's a string, remove any quotes and parse
         detectedHeight = parseFloat(mlResponse.Ketinggian.replace(/"/g, ''));
       }
       
       console.log('Detected height from ML:', detectedHeight);
       
-      // Use detected height if valid, otherwise fall back to user-provided
-      if (!isNaN(detectedHeight)) {
+      // Use detected height if valid and not 0
+      if (!isNaN(detectedHeight) && detectedHeight !== 0) {
         height = detectedHeight;
+        console.log('Using ML-detected height:', height);
+      } else {
+        console.log('Using user-provided height:', height);
       }
     }
     
-    console.log('Final height value to be stored:', height);
+    // Extract latitude if available from ML response
+    if (mlResponse && mlResponse.latitude !== undefined) {
+      let detectedLatitude;
+      
+      if (typeof mlResponse.latitude === 'number') {
+        detectedLatitude = mlResponse.latitude;
+      } else if (typeof mlResponse.latitude === 'string') {
+        detectedLatitude = parseFloat(mlResponse.latitude.replace(/"/g, ''));
+      }
+      
+      console.log('Detected latitude from ML:', detectedLatitude);
+      
+      // Use detected latitude if valid and not 0
+      if (!isNaN(detectedLatitude) && detectedLatitude !== 0) {
+        latitude = detectedLatitude;
+        console.log('Using ML-detected latitude:', latitude);
+      } else {
+        console.log('Using user-provided latitude:', latitude);
+      }
+    }
+    
+    // Extract longitude if available from ML response
+    if (mlResponse && mlResponse.longitude !== undefined) {
+      let detectedLongitude;
+      
+      if (typeof mlResponse.longitude === 'number') {
+        detectedLongitude = mlResponse.longitude;
+      } else if (typeof mlResponse.longitude === 'string') {
+        detectedLongitude = parseFloat(mlResponse.longitude.replace(/"/g, ''));
+      }
+      
+      console.log('Detected longitude from ML:', detectedLongitude);
+      
+      // Use detected longitude if valid and not 0
+      if (!isNaN(detectedLongitude) && detectedLongitude !== 0) {
+        longitude = detectedLongitude;
+        console.log('Using ML-detected longitude:', longitude);
+      } else {
+        console.log('Using user-provided longitude:', longitude);
+      }
+    }
     
     // Extract antenna counts if available
     if (mlResponse && mlResponse.antenna_counts) {
@@ -98,9 +134,9 @@ const createPerangkatAntenna = async (data, files, userId) => {
     // Calculate total antenna count
     const totalAntena = jumlahAntenaRF + jumlahAntenaRRU + jumlahAntenaMW;
     
-    // 3. Start database transaction with increased timeout
+    // Start database transaction
     return await prisma.$transaction(async (prisma) => {
-      // 4. Create Perangkat Antenna record
+      // Create Perangkat Antenna record with final values
       const perangkatAntenna = await prisma.perangkatAntenna.create({
         data: {
           tower: {
@@ -109,8 +145,8 @@ const createPerangkatAntenna = async (data, files, userId) => {
           user: {
             connect: { id: userId }
           },
-          latitude: parseFloat(latitude),
-          longitude: parseFloat(longitude),
+          latitude: latitude,
+          longitude: longitude,
           height: height,
           jumlahAntenaRF,
           jumlahAntenaRRU,
@@ -119,7 +155,7 @@ const createPerangkatAntenna = async (data, files, userId) => {
         }
       });
       
-      // 5. Create photo records with the pre-uploaded images
+      // Create photo records with the pre-uploaded images
       const photoPromises = uploadResults.map(uploadResult => 
         prisma.perangkatFoto.create({
           data: {
@@ -133,7 +169,7 @@ const createPerangkatAntenna = async (data, files, userId) => {
       
       await Promise.all(photoPromises);
       
-      // 6. Return created record with photos
+      // Return created record with photos
       return prisma.perangkatAntenna.findUnique({
         where: { id: perangkatAntenna.id },
         include: {
@@ -153,7 +189,6 @@ const createPerangkatAntenna = async (data, files, userId) => {
         }
       });
     }, {
-      // Increase transaction timeout to 10 seconds
       timeout: 10000
     });
   } catch (error) {

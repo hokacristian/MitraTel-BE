@@ -15,13 +15,13 @@ const createPerangkatAntenna = async (req, res) => {
     }
     
     // Validate required fields
-    const { towerId, latitude, longitude } = req.body;
+    const { towerId, latitude, longitude, height } = req.body;
     
     if (!towerId) {
-      return res.status(400).json({ message: 'Tower ID is required' });
+      return res.status(400).json({ message: 'Tower ID is required' }); 
     }
     
-    if (!latitude || !longitude) {
+    if (!latitude || !longitude || !height) {
       return res.status(400).json({ message: 'Latitude and longitude are required' });
     }
     
