@@ -65,9 +65,11 @@ const getAllTowers = async (req, res) => {
 const getTowerById = async (req, res) => {
   try {
     const { id } = req.params;
+    const towerId = parseInt(id);
     
+    // Dapatkan data tower dengan wilayah
     const tower = await prisma.tower.findUnique({
-      where: { id: parseInt(id) },
+      where: { id: towerId },
       include: {
         wilayah: true
       }
@@ -77,9 +79,67 @@ const getTowerById = async (req, res) => {
       return res.status(404).json({ message: 'Tower not found' });
     }
     
+    // Dapatkan data terbaru dari ketiga kategori
+    const [latestKebersihan, latestPerangkat, latestTegangan] = await Promise.all([
+      // Data kebersihan terbaru
+      prisma.kebersihanSite.findFirst({
+        where: { towerId },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          fotos: true,
+          user: {
+            select: {
+              id: true,
+              name: true,
+              username: true
+            }
+          }
+        }
+      }),
+      
+      // Data perangkat antenna terbaru
+      prisma.perangkatAntenna.findFirst({
+        where: { towerId },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          fotos: true,
+          user: {
+            select: {
+              id: true,
+              name: true,
+              username: true
+            }
+          }
+        }
+      }),
+      
+      // Data tegangan listrik terbaru
+      prisma.teganganListrik.findFirst({
+        where: { towerId },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          fotos: true,
+          user: {
+            select: {
+              id: true,
+              name: true,
+              username: true
+            }
+          }
+        }
+      })
+    ]);
+    
     res.status(200).json({
       message: 'Tower retrieved successfully',
-      data: tower
+      data: {
+        ...tower,
+        latestData: {
+          kebersihan: latestKebersihan || null,
+          perangkat: latestPerangkat || null,
+          tegangan: latestTegangan || null
+        }
+      }
     });
   } catch (error) {
     console.error('Error in getTowerById:', error);
@@ -87,8 +147,32 @@ const getTowerById = async (req, res) => {
   }
 };
 
+const getTowerCount = async (req, res) => {
+  try {
+    const { wilayahId } = req.query;
+    
+    const whereClause = {};
+    if (wilayahId) {
+      whereClause.wilayahId = parseInt(wilayahId);
+    }
+    
+    const count = await prisma.tower.count({
+      where: whereClause
+    });
+    
+    res.status(200).json({
+      message: 'Tower count retrieved successfully',
+      data: { count }
+    });
+  } catch (error) {
+    console.error('Error in getTowerCount:', error);
+    res.status(500).json({ message: 'Failed to retrieve tower count', error: error.message });
+  }
+};
+
 module.exports = {
   createTower,
   getAllTowers,
-  getTowerById
+  getTowerById,
+  getTowerCount
 };

@@ -16,4 +16,7 @@ router.get('/:id', getTowerById);
 // Create tower - only accessible by ADMIN
 router.post('/', roleMiddleware('ADMIN'), createTower);
 
+router.get('/count', getTowerCount);
+// Get tower count - accessible by all authenticated users
+
 module.exports = router;
