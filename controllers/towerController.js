@@ -176,9 +176,111 @@ const getTowerCount = async (req, res) => {
   }
 };
 
+// Get total antenna counts from all towers across all wilayah
+const getAntennaCounts = async (req, res) => {
+  try {
+    // Get antenna stats from Tower model for all towers
+    const antennaStats = await prisma.tower.aggregate({
+      _sum: {
+        antenaRRU: true,
+        antenaRF: true,
+        antenaMW: true
+      }
+    });
+    
+    // Calculate totals
+    const totalRRU = antennaStats._sum.antenaRRU || 0;
+    const totalRF = antennaStats._sum.antenaRF || 0;
+    const totalMW = antennaStats._sum.antenaMW || 0;
+    const totalAntena = totalRRU + totalRF + totalMW;
+    
+    res.status(200).json({
+      message: 'Total antenna counts retrieved successfully',
+      data: {
+        total: totalAntena,
+        rru: totalRRU,
+        rf: totalRF,
+        mw: totalMW
+      }
+    });
+  } catch (error) {
+    console.error('Error in getAntennaCounts:', error);
+    res.status(500).json({ message: 'Failed to retrieve antenna counts', error: error.message });
+  }
+};
+
+// Get kebersihan counts (clean vs unclean) for all towers
+const getKebersihanCounts = async (req, res) => {
+  try {
+    // Only count completed records across all towers
+    const whereClause = { status: 'COMPLETED' };
+    
+    // Get kebersihan stats for all towers
+    const kebersihanStats = await prisma.kebersihanSite.groupBy({
+      by: ['classification'],
+      where: whereClause,
+      _count: true
+    });
+    
+    // Process the kebersihan data
+    const cleanCount = kebersihanStats.find(stat => stat.classification === 'clean')?._count || 0;
+    const uncleanCount = kebersihanStats.find(stat => stat.classification === 'unclean')?._count || 0;
+    const totalKebersihan = cleanCount + uncleanCount;
+    
+    res.status(200).json({
+      message: 'Total kebersihan counts retrieved successfully',
+      data: {
+        total: totalKebersihan,
+        clean: cleanCount,
+        unclean: uncleanCount
+      }
+    });
+  } catch (error) {
+    console.error('Error in getKebersihanCounts:', error);
+    res.status(500).json({ message: 'Failed to retrieve kebersihan counts', error: error.message });
+  }
+};
+
+// Get tegangan counts (normal, high, low) for all towers
+const getTeganganCounts = async (req, res) => {
+  try {
+    // Only count completed records across all towers
+    const whereClause = { status: 'COMPLETED' };
+    
+    // Get tegangan stats for all towers
+    const teganganStats = await prisma.teganganListrik.groupBy({
+      by: ['profil'],
+      where: whereClause,
+      _count: true
+    });
+    
+    // Process the tegangan data
+    const normalCount = teganganStats.find(stat => stat.profil === 'NORMAL')?._count || 0;
+    const highCount = teganganStats.find(stat => stat.profil === 'HIGH')?._count || 0;
+    const lowCount = teganganStats.find(stat => stat.profil === 'LOW')?._count || 0;
+    const totalTegangan = normalCount + highCount + lowCount;
+    
+    res.status(200).json({
+      message: 'Total tegangan counts retrieved successfully',
+      data: {
+        total: totalTegangan,
+        normal: normalCount,
+        high: highCount,
+        low: lowCount
+      }
+    });
+  } catch (error) {
+    console.error('Error in getTeganganCounts:', error);
+    res.status(500).json({ message: 'Failed to retrieve tegangan counts', error: error.message });
+  }
+};
+
 module.exports = {
   createTower,
   getAllTowers,
   getTowerById,
-  getTowerCount
+  getTowerCount,
+  getAntennaCounts,
+  getKebersihanCounts,
+  getTeganganCounts
 };

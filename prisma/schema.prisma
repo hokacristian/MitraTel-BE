@@ -51,6 +51,9 @@ model Tower {
   longitude        Float
   wilayahId        Int
   wilayah          Wilayah           @relation(fields: [wilayahId], references: [id])
+  antenaRRU        Int               @default(0)
+  antenaRF         Int               @default(0)
+  antenaMW         Int               @default(0)
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   kebersihanSites  KebersihanSite[]
