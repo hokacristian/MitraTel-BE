@@ -37,8 +37,16 @@ const findUserByUsername = async (username) => {
   });
 };
 
+// New function to find user by ID
+const findUserById = async (userId) => {
+  return prisma.user.findUnique({
+    where: { id: userId }
+  });
+};
+
 module.exports = {
   registerUser,
   findUserByUsernameOrPhone,
-  findUserByUsername
+  findUserByUsername,
+  findUserById
 };
