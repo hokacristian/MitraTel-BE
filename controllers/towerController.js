@@ -65,9 +65,15 @@ const getAllTowers = async (req, res) => {
 const getTowerById = async (req, res) => {
   try {
     const { id } = req.params;
+    
+    // Check if id exists and is a valid number
+    if (!id || isNaN(parseInt(id))) {
+      return res.status(400).json({ message: 'Valid tower ID is required' });
+    }
+    
     const towerId = parseInt(id);
     
-    // Dapatkan data tower dengan wilayah
+    // Get tower data with wilayah
     const tower = await prisma.tower.findUnique({
       where: { id: towerId },
       include: {
@@ -79,9 +85,9 @@ const getTowerById = async (req, res) => {
       return res.status(404).json({ message: 'Tower not found' });
     }
     
-    // Dapatkan data terbaru dari ketiga kategori
+    // Get latest data from all three categories
     const [latestKebersihan, latestPerangkat, latestTegangan] = await Promise.all([
-      // Data kebersihan terbaru
+      // Latest kebersihan data
       prisma.kebersihanSite.findFirst({
         where: { towerId },
         orderBy: { createdAt: 'desc' },
@@ -97,7 +103,7 @@ const getTowerById = async (req, res) => {
         }
       }),
       
-      // Data perangkat antenna terbaru
+      // Latest perangkat antenna data
       prisma.perangkatAntenna.findFirst({
         where: { towerId },
         orderBy: { createdAt: 'desc' },
@@ -113,7 +119,7 @@ const getTowerById = async (req, res) => {
         }
       }),
       
-      // Data tegangan listrik terbaru
+      // Latest tegangan listrik data
       prisma.teganganListrik.findFirst({
         where: { towerId },
         orderBy: { createdAt: 'desc' },

@@ -11,6 +11,11 @@ const getUserHistory = async (req, res) => {
     const { page = 1, limit = 10, type } = req.query;
     const skip = (page - 1) * parseInt(limit);
     
+    // 1. Dapatkan semua tower yang pernah dikunjungi oleh user
+    const towers = new Set();
+    const towerMap = new Map(); // Menyimpan data tower
+    
+    // 2. Ambil data berdasarkan tipe
     let kebersihanData = [];
     let perangkatData = [];
     let teganganData = [];
@@ -37,6 +42,14 @@ const getUserHistory = async (req, res) => {
         }),
         prisma.kebersihanSite.count({ where: { userId } })
       ]);
+      
+      // Tambahkan tower ke Set
+      kebersihanData.forEach(item => {
+        if (item.tower) {
+          towers.add(item.tower.id);
+          towerMap.set(item.tower.id, item.tower);
+        }
+      });
     }
     
     // Jika tidak ada filter type atau type=perangkat, ambil data perangkat
@@ -58,6 +71,14 @@ const getUserHistory = async (req, res) => {
         }),
         prisma.perangkatAntenna.count({ where: { userId } })
       ]);
+      
+      // Tambahkan tower ke Set
+      perangkatData.forEach(item => {
+        if (item.tower) {
+          towers.add(item.tower.id);
+          towerMap.set(item.tower.id, item.tower);
+        }
+      });
     }
     
     // Jika tidak ada filter type atau type=tegangan, ambil data tegangan
@@ -79,7 +100,40 @@ const getUserHistory = async (req, res) => {
         }),
         prisma.teganganListrik.count({ where: { userId } })
       ]);
+      
+      // Tambahkan tower ke Set
+      teganganData.forEach(item => {
+        if (item.tower) {
+          towers.add(item.tower.id);
+          towerMap.set(item.tower.id, item.tower);
+        }
+      });
     }
+    
+    // 3. Kelompokkan data berdasarkan tower
+    const historyByTower = [];
+    
+    // Konversi Set ke Array
+    Array.from(towers).forEach(towerId => {
+      const tower = towerMap.get(towerId);
+      
+      // Filter data untuk tower ini
+      const towerKebersihan = kebersihanData.filter(item => item.tower?.id === towerId);
+      const towerPerangkat = perangkatData.filter(item => item.tower?.id === towerId);
+      const towerTegangan = teganganData.filter(item => item.tower?.id === towerId);
+      
+      // Jika ada data untuk tower ini, tambahkan ke hasil
+      if (towerKebersihan.length > 0 || towerPerangkat.length > 0 || towerTegangan.length > 0) {
+        historyByTower.push({
+          tower,
+          data: {
+            kebersihan: towerKebersihan,
+            perangkat: towerPerangkat,
+            tegangan: towerTegangan
+          }
+        });
+      }
+    });
     
     // Menentukan total data dan total halaman berdasarkan filter
     let total, totalPages;
@@ -102,11 +156,7 @@ const getUserHistory = async (req, res) => {
     
     res.status(200).json({
       message: 'User history retrieved successfully',
-      data: {
-        kebersihan: kebersihanData,
-        perangkat: perangkatData,
-        tegangan: teganganData
-      },
+      data: historyByTower,
       meta: {
         total,
         page: parseInt(page),
