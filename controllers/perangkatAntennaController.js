@@ -1,9 +1,9 @@
-// Updated perangkatAntennaController.js to handle the ML API integration correctly
+// Updated perangkatAntennaController.js for immediate response with job queue
 
 const perangkatAntennaService = require('../services/perangkatAntennaService');
 
 /**
- * Create a new Perangkat Antenna record
+ * Create a new Perangkat Antenna record - returns immediately with photo URLs
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
@@ -15,17 +15,15 @@ const createPerangkatAntenna = async (req, res) => {
     }
     
     // Validate required fields
-    const { towerId, latitude, longitude, height } = req.body;
+    const { towerId, latitude, longitude } = req.body;
     
     if (!towerId) {
       return res.status(400).json({ message: 'Tower ID is required' }); 
     }
     
-    if (!latitude || !longitude || !height) {
+    if (!latitude || !longitude) {
       return res.status(400).json({ message: 'Latitude and longitude are required' });
     }
-    
-    // Height is optional, as it can be detected by the ML model
     
     // Get user ID from authenticated user
     const userId = req.user.id;
@@ -39,12 +37,22 @@ const createPerangkatAntenna = async (req, res) => {
       userId
     });
     
-    // Process the request
-    const result = await perangkatAntennaService.createPerangkatAntenna(req.body, req.files, userId);
+    // Create initial record with photos already uploaded and URLs included
+    const initialRecord = await perangkatAntennaService.createInitialRecord(
+      req.body, 
+      req.files, 
+      userId
+    );
+    
+    // Start background processing for ML analysis (don't wait for it to finish)
+    perangkatAntennaService.processInBackground(initialRecord.id, req.body, req.files, userId)
+      .catch(error => {
+        console.error('Background processing error:', error);
+      });
     
     res.status(201).json({
-      message: 'Perangkat antenna data created successfully',
-      data: result
+      message: 'Perangkat antenna data created successfully. ML analysis is processing in the background.',
+      data: initialRecord
     });
   } catch (error) {
     console.error('Error in createPerangkatAntenna controller:', error);

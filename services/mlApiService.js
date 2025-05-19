@@ -54,7 +54,7 @@ const analyzePerangkatAntenna = async (photoBuffers) => {
     console.log('Sending request to antenna API endpoint');
     
     // Using the correct endpoint from the screenshot
-    const response = await axios.post(`${ML_API_BASE_URL}/detect_antenna_and_height`, formData, {
+    const response = await axios.post(`${ML_API_BASE_URL}/detect_antenna_and_spatial_data`, formData, {
       headers: {
         ...formData.getHeaders(),
       }
