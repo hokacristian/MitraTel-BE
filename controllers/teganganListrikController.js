@@ -1,9 +1,9 @@
-// Updated teganganListrikController.js with better error handling and validation
+// Updated teganganListrikController.js with job queue implementation
 
 const teganganListrikService = require('../services/teganganListrikService');
 
 /**
- * Create a new Tegangan Listrik record
+ * Create a new Tegangan Listrik record - returns immediately with photo URL
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
@@ -53,11 +53,22 @@ const createTeganganListrik = async (req, res) => {
       userId
     });
     
-    const result = await teganganListrikService.createTeganganListrik(req.body, req.file, userId);
+    // Create initial record with photo already uploaded and URL included
+    const initialRecord = await teganganListrikService.createInitialRecord(
+      req.body, 
+      req.file, 
+      userId
+    );
+    
+    // Start background processing for ML analysis (don't wait for it to finish)
+    teganganListrikService.processInBackground(initialRecord.id, req.body, req.file, userId)
+      .catch(error => {
+        console.error('Background processing error:', error);
+      });
     
     res.status(201).json({
-      message: 'Tegangan listrik data created successfully',
-      data: result
+      message: 'Tegangan listrik data created successfully. ML analysis is processing in the background.',
+      data: initialRecord
     });
   } catch (error) {
     console.error('Error in createTeganganListrik controller:', error);

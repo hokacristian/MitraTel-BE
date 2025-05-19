@@ -1,8 +1,211 @@
-// Corrected teganganListrikService.js - Profil based on nilaiDeteksi
+// Updated teganganListrikService.js with job queue implementation
 
 const prisma = require('../configs/prisma');
 const imageKitService = require('./imageKitService');
 const mlApiService = require('./mlApiService');
+
+/**
+ * Create initial Tegangan Listrik record with PENDING status including photo URL
+ * @param {Object} data Form data
+ * @param {Object} file Uploaded file (processed immediately)
+ * @param {String} userId Current user ID
+ * @returns {Promise<Object>} Created initial Tegangan Listrik record with photo URL
+ */
+const createInitialRecord = async (data, file, userId) => {
+  const { towerId, kategori, nilaiInput } = data;
+  
+  try {
+    // Verify that the tower exists first
+    const tower = await prisma.tower.findUnique({
+      where: { id: parseInt(towerId) }
+    });
+
+    if (!tower) {
+      throw new Error(`Tower with ID ${towerId} not found`);
+    }
+
+    // Upload photo immediately to get URL for the response
+    console.log('Uploading photo to ImageKit...');
+    const uploadResult = await imageKitService.uploadImage(file.buffer, file.originalname);
+    console.log('Successfully uploaded photo to ImageKit');
+
+    // Determine the appropriate unit (V or A) based on category
+    const satuan = determineSatuan(kategori);
+    
+    // Create the initial record with PENDING status and basic data
+    const initialRecord = await prisma.$transaction(async (prisma) => {
+      // Create the main record
+      const record = await prisma.teganganListrik.create({
+        data: {
+          tower: {
+            connect: { id: parseInt(towerId) }
+          },
+          user: {
+            connect: { id: userId }
+          },
+          status: 'PENDING', // Initial status
+          kategori: kategori,
+          nilaiInput: parseFloat(nilaiInput),
+          nilaiDeteksi: 0, // Default value until ML processing
+          satuan: satuan,
+          // Default values for ML response fields
+        }
+      });
+      
+      // Create photo record with the uploaded image URL
+      const photo = await prisma.teganganFoto.create({
+        data: {
+          url: uploadResult.url,
+          teganganListrik: {
+            connect: { id: record.id }
+          }
+        }
+      });
+      
+      // Return the record with photo
+      return {
+        ...record,
+        fotos: [photo]
+      };
+    }, {
+      timeout: 15000 
+    });
+    
+    // Include tower and user data in the response
+    const completeRecord = await prisma.teganganListrik.findUnique({
+      where: { id: initialRecord.id },
+      include: {
+        fotos: true,
+        tower: {
+          include: {
+            wilayah: true
+          }
+        },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            username: true
+          }
+        }
+      }
+    });
+    
+    return completeRecord;
+  } catch (error) {
+    console.error('Error creating initial record:', error);
+    throw error;
+  }
+};
+
+/**
+ * Process the Tegangan Listrik record in the background
+ * @param {Number} recordId The ID of the initial record
+ * @param {Object} data Form data
+ * @param {Object} file Uploaded file
+ * @param {String} userId Current user ID
+ * @returns {Promise<void>}
+ */
+const processInBackground = async (recordId, data, file, userId) => {
+  try {
+    const { kategori, nilaiInput } = data;
+    
+    console.log(`Starting background processing for record ID ${recordId}`);
+    
+    // Update status to IN_PROGRESS
+    await prisma.teganganListrik.update({
+      where: { id: recordId },
+      data: { status: 'IN_PROGRESS' }
+    });
+    
+    try {
+      // Execute ML API call
+      console.log('Starting ML API call...');
+      const mlResponse = await mlApiService.analyzeTeganganListrik(file.buffer);
+      
+      console.log('ML Response for TeganganListrik:', JSON.stringify(mlResponse));
+      
+      // Extract the detected voltage value from the ML response
+      let nilaiDeteksi = NaN;
+      
+      if (mlResponse && 
+          mlResponse.processed_data && 
+          Array.isArray(mlResponse.processed_data) && 
+          mlResponse.processed_data.length > 0 && 
+          mlResponse.processed_data[0].Tegangan) {
+          
+        nilaiDeteksi = parseFloat(mlResponse.processed_data[0].Tegangan);
+        console.log('Extracted nilaiDeteksi:', nilaiDeteksi);
+      } else {
+        console.log('Could not extract nilaiDeteksi from response:', mlResponse);
+      }
+      
+      // Determine status by comparing input value with detected value
+      let validationStatus = 'INVALID';
+      
+      if (!isNaN(nilaiDeteksi)) {
+        // Allow a small tolerance (e.g., 5% difference)
+        const tolerance = 0.05; // 5% tolerance
+        const inputValue = parseFloat(nilaiInput);
+        const difference = Math.abs(inputValue - nilaiDeteksi);
+        
+        // Handle division by zero for zero input value
+        const percentDifference = inputValue === 0 
+          ? (nilaiDeteksi === 0 ? 0 : 1) // If input is 0, only valid if detection is also 0
+          : difference / inputValue;
+        
+        validationStatus = percentDifference <= tolerance ? 'VALID' : 'INVALID';
+        console.log(`Comparison: Input ${inputValue}, Detected ${nilaiDeteksi}, Diff ${difference}, PercentDiff ${percentDifference}, Status ${validationStatus}`);
+      }
+      
+      // Determine profile (LOW/NORMAL/HIGH) based on DETECTED value
+      const valueForProfil = !isNaN(nilaiDeteksi) ? nilaiDeteksi : parseFloat(nilaiInput);
+      const profil = determineTeganganProfil(kategori, valueForProfil);
+      
+      console.log(`Determined profil for ${kategori} with detected value ${valueForProfil}: ${profil}`);
+      
+      // Update the record with ML results and set status to COMPLETED
+      await prisma.teganganListrik.update({
+        where: { id: recordId },
+        data: {
+          status: 'COMPLETED',
+          nilaiDeteksi: isNaN(nilaiDeteksi) ? 0 : nilaiDeteksi,
+          validationStatus: validationStatus,
+          profil: profil
+        }
+      });
+      
+      // Log the successful completion
+      console.log(`Background processing completed successfully for record ID ${recordId}`);
+    } catch (mlError) {
+      console.error('ML or image processing error:', mlError);
+      
+      // Update status to ERROR
+      await prisma.teganganListrik.update({
+        where: { id: recordId },
+        data: { 
+          status: 'ERROR'
+        }
+      });
+      
+      throw mlError;
+    }
+  } catch (error) {
+    console.error(`Background processing failed for record ID ${recordId}:`, error);
+    
+    // Make sure the status is set to ERROR
+    try {
+      await prisma.teganganListrik.update({
+        where: { id: recordId },
+        data: { status: 'ERROR' }
+      });
+    } catch (updateError) {
+      console.error('Failed to update status to ERROR:', updateError);
+    }
+    
+    throw error;
+  }
+};
 
 /**
  * Determine the TeganganProfil (LOW/NORMAL/HIGH) based on category and value
@@ -76,151 +279,13 @@ const determineSatuan = (kategori) => {
 };
 
 /**
- * Create a new Tegangan Listrik record with photo
- * @param {Object} data Form data
- * @param {Number} data.towerId Tower ID
- * @param {TeganganKategori} data.kategori Voltage category
- * @param {Number} data.nilaiInput Input voltage value
- * @param {Object} file Uploaded file
- * @param {String} userId Current user ID
- * @returns {Promise<Object>} Created Tegangan Listrik
- */
-const createTeganganListrik = async (data, file, userId) => {
-  const { towerId, kategori, nilaiInput } = data;
-  
-  try {
-    // Verify that the tower exists first
-    const tower = await prisma.tower.findUnique({
-      where: { id: parseInt(towerId) }
-    });
-
-    if (!tower) {
-      throw new Error(`Tower with ID ${towerId} not found`);
-    }
-
-    // 2. Process ML API call and ImageKit upload in parallel outside of transaction
-    const [mlResponse, uploadResult] = await Promise.all([
-      // ML API call
-      mlApiService.analyzeTeganganListrik(file.buffer).catch(error => {
-        console.error('ML API error:', error);
-        return { processed_data: [{ Tegangan: 'NaN' }] }; // Default response format matching the API
-      }),
-      
-      // ImageKit upload
-      imageKitService.uploadImage(file.buffer, file.originalname)
-    ]);
-
-    console.log('ML Response received:', JSON.stringify(mlResponse));
-
-    // 3. Extract the detected voltage value from the ML response
-    // Based on the screenshot, the format is { processed_data: [{ Tegangan: 40.5 }] }
-    let nilaiDeteksi = NaN;
-    
-    if (mlResponse && 
-        mlResponse.processed_data && 
-        Array.isArray(mlResponse.processed_data) && 
-        mlResponse.processed_data.length > 0 && 
-        mlResponse.processed_data[0].Tegangan) {
-        
-      nilaiDeteksi = parseFloat(mlResponse.processed_data[0].Tegangan);
-      console.log('Extracted nilaiDeteksi:', nilaiDeteksi);
-    } else {
-      console.log('Could not extract nilaiDeteksi from response:', mlResponse);
-    }
-    
-    // 4. Determine status by comparing input value with detected value
-    let status = 'INVALID';
-    
-    if (!isNaN(nilaiDeteksi)) {
-      // Allow a small tolerance (e.g., 5% difference)
-      const tolerance = 0.05; // 5% tolerance
-      const inputValue = parseFloat(nilaiInput);
-      const difference = Math.abs(inputValue - nilaiDeteksi);
-      
-      // Handle division by zero for zero input value
-      const percentDifference = inputValue === 0 
-        ? (nilaiDeteksi === 0 ? 0 : 1) // If input is 0, only valid if detection is also 0
-        : difference / inputValue;
-      
-      status = percentDifference <= tolerance ? 'VALID' : 'INVALID';
-      console.log(`Comparison: Input ${inputValue}, Detected ${nilaiDeteksi}, Diff ${difference}, PercentDiff ${percentDifference}, Status ${status}`);
-    }
-    
-    // 5. Determine the appropriate unit (V or A) based on category
-    const satuan = determineSatuan(kategori);
-    
-    // 6. Determine profile (LOW/NORMAL/HIGH) based on DETECTED value
-    // IMPORTANT: Always use the ML-detected value for profil determination
-    // If nilaiDeteksi is NaN, fallback to nilaiInput (for cases when ML detection fails)
-    const valueForProfil = !isNaN(nilaiDeteksi) ? nilaiDeteksi : parseFloat(nilaiInput);
-    const profil = determineTeganganProfil(kategori, valueForProfil);
-    
-    console.log(`Determined profil for ${kategori} with detected value ${valueForProfil}: ${profil}`);
-    
-    // 7. Now run database operations in a transaction with a higher timeout
-    // Only the critical database operations are inside the transaction
-    return await prisma.$transaction(async (prisma) => {
-      // Create Tegangan Listrik record
-      const teganganListrik = await prisma.teganganListrik.create({
-        data: {
-          nilaiInput: parseFloat(nilaiInput),
-          nilaiDeteksi: isNaN(nilaiDeteksi) ? 0 : nilaiDeteksi, // Store 0 if NaN
-          kategori: kategori,
-          status: status,
-          profil: profil, // Store the profile based on detected value
-          satuan: satuan, // Store the appropriate unit
-          user: {
-            connect: { id: userId }
-          },
-          tower: {
-            connect: { id: parseInt(towerId) }
-          }
-        }
-      });
-      
-      // Create photo record with the pre-uploaded image URL
-      await prisma.teganganFoto.create({
-        data: {
-          url: uploadResult.url,
-          teganganListrik: {
-            connect: { id: teganganListrik.id }
-          }
-        }
-      });
-      
-      // Return created record with photos
-      return prisma.teganganListrik.findUnique({
-        where: { id: teganganListrik.id },
-        include: {
-          fotos: true,
-          tower: true,
-          user: {
-            select: {
-              id: true,
-              name: true,
-              username: true
-            }
-          }
-        }
-      });
-    }, {
-      // Increase transaction timeout to 10 seconds
-      timeout: 10000
-    });
-  } catch (error) {
-    console.error('Error in createTeganganListrik:', error);
-    throw error;
-  }
-};
-
-/**
  * Get all Tegangan Listrik records
  * @param {Object} query Query parameters
  * @returns {Promise<Array<Object>>} List of Tegangan Listrik records
  */
 const getAllTeganganListrik = async (query) => {
   try {
-    const { towerId, kategori, status, profil, page = 1, limit = 10 } = query;
+    const { towerId, kategori, validationStatus, profil, page = 1, limit = 10, status } = query;
     const skip = (page - 1) * parseInt(limit);
     
     const whereClause = {};
@@ -233,12 +298,20 @@ const getAllTeganganListrik = async (query) => {
       whereClause.kategori = kategori;
     }
     
-    if (status) {
-      whereClause.status = status;
+    if (validationStatus) {
+      whereClause.validationStatus = validationStatus;
     }
     
     if (profil) {
       whereClause.profil = profil;
+    }
+    
+    // Filter by status if provided
+    if (status) {
+      whereClause.status = status;
+    } else {
+      // By default, only show COMPLETED records
+      whereClause.status = 'COMPLETED';
     }
     
     const [data, total] = await Promise.all([
@@ -290,7 +363,7 @@ const getAllTeganganListrik = async (query) => {
  */
 const getTeganganListrikById = async (id) => {
   try {
-    return prisma.teganganListrik.findUnique({
+    const record = await prisma.teganganListrik.findUnique({
       where: { id: parseInt(id) },
       include: {
         fotos: true,
@@ -308,6 +381,18 @@ const getTeganganListrikById = async (id) => {
         }
       }
     });
+    
+    // If record is IN_PROGRESS or PENDING, don't return detailed data
+    if (record && (record.status === 'IN_PROGRESS' || record.status === 'PENDING')) {
+      const { fotos, ...recordWithoutDetails } = record;
+      return {
+        ...recordWithoutDetails,
+        fotos, // Keep photos but hide detailed processing results
+        message: `Data is currently being processed (status: ${record.status})`
+      };
+    }
+    
+    return record;
   } catch (error) {
     console.error('Error in getTeganganListrikById:', error);
     throw error;
@@ -315,7 +400,8 @@ const getTeganganListrikById = async (id) => {
 };
 
 module.exports = {
-  createTeganganListrik,
+  createInitialRecord,
+  processInBackground,
   getAllTeganganListrik,
   getTeganganListrikById,
   determineTeganganProfil, // Export for testing
