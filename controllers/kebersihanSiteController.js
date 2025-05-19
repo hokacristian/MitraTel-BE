@@ -1,9 +1,9 @@
-// Updated kebersihanSiteController.js to handle the ML API integration correctly
+// Updated kebersihanSiteController.js with job queue implementation
 
 const kebersihanSiteService = require('../services/kebersihanSiteService');
 
 /**
- * Create a new Kebersihan Site record
+ * Create a new Kebersihan Site record - returns immediately with photo URLs
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
@@ -30,12 +30,22 @@ const createKebersihanSite = async (req, res) => {
       userId
     });
     
-    // Process the request
-    const result = await kebersihanSiteService.createKebersihanSite(req.body, req.files, userId);
+    // Create initial record with photos already uploaded and URLs included
+    const initialRecord = await kebersihanSiteService.createInitialRecord(
+      req.body, 
+      req.files, 
+      userId
+    );
+    
+    // Start background processing for ML analysis (don't wait for it to finish)
+    kebersihanSiteService.processInBackground(initialRecord.id, req.body, req.files, userId)
+      .catch(error => {
+        console.error('Background processing error:', error);
+      });
     
     res.status(201).json({
-      message: 'Kebersihan site data created successfully',
-      data: result
+      message: 'Kebersihan site data created successfully. ML analysis is processing in the background.',
+      data: initialRecord
     });
   } catch (error) {
     console.error('Error in createKebersihanSite controller:', error);

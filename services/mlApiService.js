@@ -4,6 +4,8 @@ const axios = require('axios');
 const FormData = require('form-data');
 
 const ML_API_BASE_URL = process.env.ML_API_BASE_URL || 'https://your-ml-api-url.com';
+const ML_API_BASE_KEBERSIHAN = process.env.ML_API_BASE_KEBERSIHAN || 'https://your-ml-api-url.com';
+
 
 /**
  * Send photos to ML API for Kebersihan Site analysis
@@ -22,7 +24,7 @@ const analyzeKebersihanSite = async (photoBuffers) => {
     console.log('Sending request to kebersihan API endpoint');
     
     // Using the correct endpoint from the screenshot
-    const response = await axios.post(`${ML_API_BASE_URL}/predict_kebersihan`, formData, {
+    const response = await axios.post(`${ML_API_BASE_KEBERSIHAN}/predict_kebersihan`, formData, {
       headers: {
         ...formData.getHeaders(),
       }

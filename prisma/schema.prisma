@@ -59,22 +59,23 @@ model Tower {
 }
 
 model KebersihanSite {
-  id            Int             @id @default(autoincrement())
-  towerId       Int
-  tower         Tower           @relation(fields: [towerId], references: [id])
-  userId        String
-  user          User            @relation(fields: [userId], references: [id])
-  status        ProcessingStatus @default(PENDING) // Added status field
-  classification String?         // Made optional as it will be filled after ML processing
-  tanamanLiar   Int             @default(0) // Set defaults for counts
-  lumut         Int             @default(0)
-  genanganAir   Int             @default(0)
-  nodaDinding   Int             @default(0)
-  retakan       Int             @default(0)
-  sampah        Int             @default(0)
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  fotos         KebersihanFoto[]
+  id              Int               @id @default(autoincrement())
+  towerId         Int
+  tower           Tower             @relation(fields: [towerId], references: [id])
+  userId          String
+  user            User              @relation(fields: [userId], references: [id])
+  status          ProcessingStatus  @default(PENDING)
+  classification  String?
+  tanamanLiar     Int               @default(0)
+  lumut           Int               @default(0)
+  genanganAir     Int               @default(0)
+  nodaDinding     Int               @default(0)
+  retakan         Int               @default(0)
+  sampah          Int               @default(0)
+  recommendations String[]          @default([]) 
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  fotos           KebersihanFoto[]
 }
 
 model KebersihanFoto {
