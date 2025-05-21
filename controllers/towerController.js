@@ -55,64 +55,80 @@ const getAllTowers = async (req, res) => {
       },
     });
 
-    // Enhance towers with status and complete_progress info
+    // Enhance towers with status, complete_progress, dan technicianName
     const enhancedTowers = await Promise.all(
       towers.map(async (tower) => {
-        // Use a safer approach with individual try/catch blocks for each count query
-        let kebersihanCount = 0;
-        let kondisiTowerCount = 0;
-        let perangkatCount = 0;
-        let teganganCount = 0;
+        let kebersihanLatest = null;
+        let kondisiTowerLatest = null;
+        let perangkatLatest = null;
+        let teganganLatest = null;
 
+        // 1. Ambil data terakhir dari setiap kategori
         try {
-          kebersihanCount = await prisma.kebersihanSite.count({
+          kebersihanLatest = await prisma.kebersihanSite.findFirst({
             where: { towerId: tower.id },
+            orderBy: { createdAt: "desc" },
+            select: {
+              user: { select: { name: true } },
+              createdAt: true
+            }
           });
         } catch (error) {
-          console.error(`Error counting kebersihanSite for tower ${tower.id}:`, error);
+          console.error(`Error fetching kebersihan for tower ${tower.id}:`, error);
         }
 
         try {
-          kondisiTowerCount = await prisma.kondisiTower.count({
-            where: {
+          kondisiTowerLatest = await prisma.kondisiTower.findFirst({
+            where: { 
               towerId: tower.id,
-              status: "COMPLETED", // Only count completed records
+              status: "COMPLETED" 
             },
+            orderBy: { createdAt: "desc" },
+            select: {
+              user: { select: { name: true } },
+              createdAt: true
+            }
           });
         } catch (error) {
-          console.error(`Error counting kondisiTower for tower ${tower.id}:`, error);
+          console.error(`Error fetching kondisi tower for tower ${tower.id}:`, error);
         }
 
         try {
-          perangkatCount = await prisma.perangkatAntenna.count({
+          perangkatLatest = await prisma.perangkatAntenna.findFirst({
             where: { towerId: tower.id },
+            orderBy: { createdAt: "desc" },
+            select: {
+              user: { select: { name: true } },
+              createdAt: true
+            }
           });
         } catch (error) {
-          console.error(`Error counting perangkatAntenna for tower ${tower.id}:`, error);
+          console.error(`Error fetching perangkat for tower ${tower.id}:`, error);
         }
 
-        // This is the one that seems to be causing issues, so let's handle it extra carefully
         try {
-          // First check if the model exists
           if (prisma.teganganListrik) {
-            teganganCount = await prisma.teganganListrik.count({
+            teganganLatest = await prisma.teganganListrik.findFirst({
               where: { towerId: tower.id },
+              orderBy: { createdAt: "desc" },
+              select: {
+                user: { select: { name: true } },
+                createdAt: true
+              }
             });
-          } else {
-            console.error('teganganListrik model not found in Prisma client');
           }
         } catch (error) {
-          console.error(`Error counting teganganListrik for tower ${tower.id}:`, error);
+          console.error(`Error fetching tegangan for tower ${tower.id}:`, error);
         }
 
-        // Calculate complete_progress
+        // 2. Hitung complete_progress
         let complete_progress = 0;
-        if (kebersihanCount > 0) complete_progress++;
-        if (kondisiTowerCount > 0) complete_progress++;
-        if (perangkatCount > 0) complete_progress++;
-        if (teganganCount > 0) complete_progress++;
+        if (kebersihanLatest) complete_progress++;
+        if (kondisiTowerLatest) complete_progress++;
+        if (perangkatLatest) complete_progress++;
+        if (teganganLatest) complete_progress++;
 
-        // Determine status based on complete_progress
+        // 3. Tentukan status
         let status = "pending";
         if (complete_progress > 0 && complete_progress < 4) {
           status = "in_progress";
@@ -120,11 +136,30 @@ const getAllTowers = async (req, res) => {
           status = "completed";
         }
 
-        // Return tower with status fields
+        // 4. Cari teknisi terakhir
+        const allLatest = [
+          kebersihanLatest, 
+          kondisiTowerLatest, 
+          perangkatLatest, 
+          teganganLatest
+        ].filter(Boolean);
+
+        let latestRecord = null;
+        if (allLatest.length > 0) {
+          latestRecord = allLatest.reduce((latest, current) => {
+            return new Date(current.createdAt) > new Date(latest.createdAt) 
+              ? current 
+              : latest;
+          });
+        }
+
+        const technicianName = latestRecord?.user?.name || "Unknown";
+
         return {
           ...tower,
           status,
           complete_progress,
+          technicianName // Tambahkan field ini
         };
       })
     );
@@ -135,14 +170,10 @@ const getAllTowers = async (req, res) => {
     });
   } catch (error) {
     console.error("Error in getAllTowers:", error);
-    res
-      .status(500)
-      .json({ 
-        message: "Failed to retrieve towers", 
-        error: error.message,
-        // Include model information for debugging
-        prismaModels: Object.keys(prisma)
-      });
+    res.status(500).json({ 
+      message: "Failed to retrieve towers", 
+      error: error.message 
+    });
   }
 };
 
