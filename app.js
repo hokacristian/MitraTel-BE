@@ -7,6 +7,8 @@ const kebersihanSiteRoutes = require('./routes/kebersihanSiteRoutes');
 const perangkatAntennaRoutes = require('./routes/perangkatAntennaRoutes');
 const teganganListrikRoutes = require('./routes/teganganListrikRoutes');
 const historyRoutes = require('./routes/historyRoutes');
+const kondisiTowerRoutes = require('./routes/kondisiTowerRoutes'); // Add the new routes
+
 
 const app = express();
 
@@ -27,6 +29,8 @@ app.use('/kebersihan', kebersihanSiteRoutes);
 app.use('/perangkat', perangkatAntennaRoutes);
 app.use('/tegangan', teganganListrikRoutes); 
 app.use('/history', historyRoutes);
+app.use('/kondisitower', kondisiTowerRoutes); 
+
 
 
 // Health check endpoint

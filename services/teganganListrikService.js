@@ -128,14 +128,10 @@ const processInBackground = async (recordId, data, file, userId) => {
       // Extract the detected voltage value from the ML response
       let nilaiDeteksi = NaN;
       
-      if (mlResponse && 
-          mlResponse.processed_data && 
-          Array.isArray(mlResponse.processed_data) && 
-          mlResponse.processed_data.length > 0 && 
-          mlResponse.processed_data[0].Tegangan) {
-          
-        nilaiDeteksi = parseFloat(mlResponse.processed_data[0].Tegangan);
-        console.log('Extracted nilaiDeteksi:', nilaiDeteksi);
+      // Handle the new array response format ONLY
+      if (Array.isArray(mlResponse) && mlResponse.length > 0 && mlResponse[0].Tegangan !== undefined) {
+        nilaiDeteksi = parseFloat(mlResponse[0].Tegangan);
+        console.log('Extracted nilaiDeteksi from array format:', nilaiDeteksi);
       } else {
         console.log('Could not extract nilaiDeteksi from response:', mlResponse);
       }
@@ -172,6 +168,7 @@ const processInBackground = async (recordId, data, file, userId) => {
           nilaiDeteksi: isNaN(nilaiDeteksi) ? 0 : nilaiDeteksi,
           validationStatus: validationStatus,
           profil: profil
+          // Removed errorMessage field
         }
       });
       
@@ -180,7 +177,15 @@ const processInBackground = async (recordId, data, file, userId) => {
     } catch (mlError) {
       console.error('ML or image processing error:', mlError);
       
-      // Update status to ERROR
+      // Log the error details but don't try to save them to the database
+      const errorMessage = mlError.message || 'Unknown error occurred';
+      const errorDetails = mlError.response ? 
+        `Status: ${mlError.response.status}, Data: ${JSON.stringify(mlError.response.data)}` : 
+        'No response details available';
+      
+      console.error(`Error details for record ${recordId}: ${errorMessage} - ${errorDetails}`);
+      
+      // Update status to ERROR without errorMessage field
       await prisma.teganganListrik.update({
         where: { id: recordId },
         data: { 
@@ -193,11 +198,13 @@ const processInBackground = async (recordId, data, file, userId) => {
   } catch (error) {
     console.error(`Background processing failed for record ID ${recordId}:`, error);
     
-    // Make sure the status is set to ERROR
+    // Make sure the status is set to ERROR without errorMessage field
     try {
       await prisma.teganganListrik.update({
         where: { id: recordId },
-        data: { status: 'ERROR' }
+        data: { 
+          status: 'ERROR'
+        }
       });
     } catch (updateError) {
       console.error('Failed to update status to ERROR:', updateError);

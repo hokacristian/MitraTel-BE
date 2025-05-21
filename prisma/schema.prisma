@@ -16,24 +16,25 @@ enum Role {
 
 // New enum for processing status
 enum ProcessingStatus {
-  PENDING    // Initial state, not yet processed
+  PENDING // Initial state, not yet processed
   IN_PROGRESS // Processing by ML API
-  COMPLETED   // Successfully processed
-  ERROR       // Error during processing
+  COMPLETED // Successfully processed
+  ERROR // Error during processing
 }
 
 model User {
-  id               String            @id @default(uuid())
-  username         String            @unique
+  id               String             @id @default(uuid())
+  username         String             @unique
   name             String
-  nomorTelpon      String            @unique
+  nomorTelpon      String             @unique
   password         String
-  role             Role              @default(PETUGAS)
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  role             Role               @default(PETUGAS)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
   kebersihanSites  KebersihanSite[]
   perangkatAntenas PerangkatAntenna[]
   teganganListriks TeganganListrik[]
+  kondisiTowers    KondisiTower[]
 }
 
 model Wilayah {
@@ -45,39 +46,40 @@ model Wilayah {
 }
 
 model Tower {
-  id               Int               @id @default(autoincrement())
+  id               Int                @id @default(autoincrement())
   nama             String
   latitude         Float
   longitude        Float
   wilayahId        Int
-  wilayah          Wilayah           @relation(fields: [wilayahId], references: [id])
-  antenaRRU        Int               @default(0)
-  antenaRF         Int               @default(0)
-  antenaMW         Int               @default(0)
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  wilayah          Wilayah            @relation(fields: [wilayahId], references: [id])
+  antenaRRU        Int                @default(0)
+  antenaRF         Int                @default(0)
+  antenaMW         Int                @default(0)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
   kebersihanSites  KebersihanSite[]
   perangkatAntenas PerangkatAntenna[]
   teganganListriks TeganganListrik[]
+  kondisiTowers    KondisiTower[]
 }
 
 model KebersihanSite {
-  id              Int               @id @default(autoincrement())
+  id              Int              @id @default(autoincrement())
   towerId         Int
-  tower           Tower             @relation(fields: [towerId], references: [id])
+  tower           Tower            @relation(fields: [towerId], references: [id])
   userId          String
-  user            User              @relation(fields: [userId], references: [id])
-  status          ProcessingStatus  @default(PENDING)
+  user            User             @relation(fields: [userId], references: [id])
+  status          ProcessingStatus @default(PENDING)
   classification  String?
-  tanamanLiar     Int               @default(0)
-  lumut           Int               @default(0)
-  genanganAir     Int               @default(0)
-  nodaDinding     Int               @default(0)
-  retakan         Int               @default(0)
-  sampah          Int               @default(0)
-  recommendations String[]          @default([]) 
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  tanamanLiar     Int              @default(0)
+  lumut           Int              @default(0)
+  genanganAir     Int              @default(0)
+  nodaDinding     Int              @default(0)
+  retakan         Int              @default(0)
+  sampah          Int              @default(0)
+  recommendations String[]         @default([])
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
   fotos           KebersihanFoto[]
 }
 
@@ -91,22 +93,22 @@ model KebersihanFoto {
 }
 
 model PerangkatAntenna {
-  id             Int             @id @default(autoincrement())
-  towerId        Int
-  tower          Tower           @relation(fields: [towerId], references: [id])
-  userId         String
-  user           User            @relation(fields: [userId], references: [id])
-  status         ProcessingStatus @default(PENDING) // Added status field
-  latitude       Float
-  longitude      Float
-  height         Float
-  jumlahAntenaRF Int             @default(0) // Set defaults for counts
-  jumlahAntenaRRU Int            @default(0)
-  jumlahAntenaMW Int             @default(0)
-  totalAntena    Int             @default(0)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  fotos          PerangkatFoto[]
+  id              Int              @id @default(autoincrement())
+  towerId         Int
+  tower           Tower            @relation(fields: [towerId], references: [id])
+  userId          String
+  user            User             @relation(fields: [userId], references: [id])
+  status          ProcessingStatus @default(PENDING) // Added status field
+  latitude        Float
+  longitude       Float
+  height          Float
+  jumlahAntenaRF  Int              @default(0) // Set defaults for counts
+  jumlahAntenaRRU Int              @default(0)
+  jumlahAntenaMW  Int              @default(0)
+  totalAntena     Int              @default(0)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  fotos           PerangkatFoto[]
 }
 
 model PerangkatFoto {
@@ -144,21 +146,21 @@ enum TeganganProfil {
 }
 
 model TeganganListrik {
-  id           Int              @id @default(autoincrement())
-  towerId      Int
-  tower        Tower            @relation(fields: [towerId], references: [id])
-  userId       String
-  user         User             @relation(fields: [userId], references: [id])
-  status       ProcessingStatus @default(PENDING) // Added status field
-  kategori     TeganganKategori
-  nilaiInput   Float            
-  nilaiDeteksi Float            @default(0) // Set default
+  id               Int              @id @default(autoincrement())
+  towerId          Int
+  tower            Tower            @relation(fields: [towerId], references: [id])
+  userId           String
+  user             User             @relation(fields: [userId], references: [id])
+  status           ProcessingStatus @default(PENDING) // Added status field
+  kategori         TeganganKategori
+  nilaiInput       Float
+  nilaiDeteksi     Float            @default(0) // Set default
   validationStatus TeganganStatus? // Renamed from 'status' to avoid conflict with ProcessingStatus  
-  profil       TeganganProfil?  // Made optional as it will be set after ML processing
-  satuan       String           @default("V") // Set default
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-  fotos        TeganganFoto[]
+  profil           TeganganProfil? // Made optional as it will be set after ML processing
+  satuan           String           @default("V") // Set default
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  fotos            TeganganFoto[]
 }
 
 model TeganganFoto {
@@ -168,4 +170,49 @@ model TeganganFoto {
   teganganListrik TeganganListrik @relation(fields: [teganganId], references: [id], onDelete: Cascade)
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
+}
+
+// model KondisiTower {
+//   id              Int              @id @default(autoincrement())
+//   towerId         Int
+//   tower           Tower            @relation(fields: [towerId], references: [id])
+//   userId          String
+//   user            User             @relation(fields: [userId], references: [id])
+//   status          ProcessingStatus @default(PENDING)
+//   kelengkapanBaut String? // bolt_completeness_status
+//   jmlhBaut        Int              @default(0) // total_bolts_detected
+//   lvlKarat        String? // overall_rust_level
+//   jmlhKaratRingan Int              @default(0) // karat_ringan
+//   jmlhKaratSedang Int              @default(0) // karat_sedang if available 
+//   jmlhKaratBerat  Int              @default(0) // karat_berat if available
+//   createdAt       DateTime         @default(now())
+//   updatedAt       DateTime         @updatedAt
+//   fotos           KondisiFoto[]
+// }
+
+model KondisiTower {
+  id              Int              @id @default(autoincrement())
+  towerId         Int
+  tower           Tower            @relation(fields: [towerId], references: [id])
+  userId          String
+  user            User             @relation(fields: [userId], references: [id])
+  status          ProcessingStatus @default(PENDING)
+  lvlBaut         String?          // Renamed from kelengkapanBaut to lvlBaut
+  jmlhBaut        Int              @default(0) // total_bolts_detected
+  levelKarat      String?          // overall_rust_level
+  // deskripsiKarat  String?          
+  poseTower       String?          // pose from pose_analysis
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  fotos           KondisiFoto[]
+}
+
+model KondisiFoto {
+  id           Int          @id @default(autoincrement())
+  url          String
+  kondisiId    Int
+  kondisiTower KondisiTower @relation(fields: [kondisiId], references: [id], onDelete: Cascade)
+  type         String // "rust" or "bolts" to distinguish photo types
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 }
